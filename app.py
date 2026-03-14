@@ -114,7 +114,14 @@ Responde SOLO con un JSON valido con esta estructura exacta, sin texto adicional
             st.session_state["plan_ia"] = plan
             st.success("Plan generado. Revisa y edita los campos abajo antes de descargar.")
         except Exception as e:
+            detail = ""
+            try:
+                detail = resp.json()
+            except Exception:
+                pass
             st.error(f"Error al generar: {e}")
+            if detail:
+                st.json(detail)
 
 st.divider()
 
