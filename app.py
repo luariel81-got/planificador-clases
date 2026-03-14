@@ -97,7 +97,7 @@ Responde SOLO con un JSON valido con esta estructura exacta, sin texto adicional
                     "content-type": "application/json",
                 },
                 json={
-                    "model": "claude-sonnet-4-20250514",
+                    "model": "claude-sonnet-4-6",
                     "max_tokens": 1500,
                     "messages": [{"role": "user", "content": prompt}],
                 },
