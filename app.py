@@ -1,5 +1,5 @@
 import streamlit as st
-import subprocess, json, os
+import subprocess, json, os, requests
 from datetime import date
 import pytz
 from datetime import datetime as _dt
@@ -18,6 +18,8 @@ st.set_page_config(page_title="Planificador de Clases", page_icon="📚", layout
 st.markdown("""
 <style>
 .main .block-container { max-width: 900px; padding-top: 1.5rem; }
+.stTextArea textarea { font-size: 15px !important; }
+.stTextInput input  { font-size: 15px !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -30,7 +32,9 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.divider()
-st.subheader("Datos generales")
+
+# ── Datos base ────────────────────────────────────────────────────────────────
+st.subheader("1️⃣  Datos de la clase")
 
 c1, c2, c3 = st.columns([2, 2, 1])
 materia  = c1.text_input("Materia", value="Educacion Cristiana")
@@ -38,43 +42,128 @@ grado    = c2.selectbox("Grado", GRADOS)
 fecha    = c3.date_input("Fecha", value=hoy_py())
 
 c4, c5 = st.columns(2)
-docente  = c4.text_input("Docente", placeholder="Nombre completo")
+docente  = c4.text_input("Docente", placeholder="Tu nombre completo")
 duracion = c5.text_input("Duracion", value="80 minutos")
 
-tema      = st.text_input("Tema de la clase", placeholder="ej: El fruto del Espiritu")
-versiculo = st.text_input("Versiculo base",   placeholder="ej: Galatas 5:22-23")
-objetivo  = st.text_area("Objetivo de la clase",
-    placeholder="Al finalizar la clase, el alumno sera capaz de...", height=80)
+tema      = st.text_input("📖 Tema de la clase", placeholder="ej: El fruto del Espiritu - Amor")
+versiculo = st.text_input("✝️ Versiculo base",   placeholder="ej: Galatas 5:22-23")
 
 st.divider()
-st.subheader("Actividades")
 
+# ── Botón IA ──────────────────────────────────────────────────────────────────
+st.subheader("2️⃣  Generar con IA")
+st.caption("Ingresa el tema y versiculo arriba, luego toca el boton. Podras editar todo antes de descargar.")
+
+if st.button("✨ Generar plan con IA", type="primary", use_container_width=True):
+    if not tema.strip():
+        st.error("Ingresa el tema primero.")
+        st.stop()
+
+    prompt = f"""Eres un docente experto en Educacion Cristiana para nivel secundario en Paraguay.
+Genera un plan de clase completo en español para los siguientes datos:
+
+- Materia: {materia}
+- Grado: {grado}
+- Tema: {tema}
+- Versiculo base: {versiculo or "no especificado"}
+- Duracion total: {duracion}
+
+Responde SOLO con un JSON valido con esta estructura exacta, sin texto adicional, sin markdown:
+{{
+  "objetivo": "objetivo de aprendizaje claro y medible",
+  "inicio": {{
+    "tiempo": "15 min",
+    "descripcion": "descripcion detallada de actividades de inicio"
+  }},
+  "desarrollo": {{
+    "tiempo": "50 min",
+    "descripcion": "descripcion detallada de actividades de desarrollo"
+  }},
+  "cierre": {{
+    "tiempo": "15 min",
+    "descripcion": "descripcion detallada de actividades de cierre"
+  }},
+  "recursos": "lista de recursos necesarios separados por coma",
+  "evaluacion": "descripcion de la tarea o evaluacion"
+}}"""
+
+    with st.spinner("Generando plan de clase..."):
+        try:
+            resp = requests.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": st.secrets["ANTHROPIC_API_KEY"],
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json={
+                    "model": "claude-sonnet-4-20250514",
+                    "max_tokens": 1500,
+                    "messages": [{"role": "user", "content": prompt}],
+                },
+                timeout=30,
+            )
+            resp.raise_for_status()
+            raw = resp.json()["content"][0]["text"].strip()
+            # Limpiar posibles bloques markdown
+            if raw.startswith("```"):
+                raw = raw.split("```")[1]
+                if raw.startswith("json"):
+                    raw = raw[4:]
+            plan = json.loads(raw)
+            st.session_state["plan_ia"] = plan
+            st.success("Plan generado. Revisa y edita los campos abajo antes de descargar.")
+        except Exception as e:
+            st.error(f"Error al generar: {e}")
+
+st.divider()
+
+# ── Campos editables (pre-rellenados si hay plan IA) ─────────────────────────
+plan = st.session_state.get("plan_ia", {})
+
+st.subheader("3️⃣  Revisa y edita el plan")
+
+objetivo = st.text_area(
+    "🎯 Objetivo de la clase",
+    value=plan.get("objetivo", ""),
+    placeholder="Al finalizar la clase, el alumno sera capaz de...",
+    height=90,
+)
+
+st.markdown("**🗓️ Actividades**")
 tiempos_def = {"Inicio": "15 min", "Desarrollo": "50 min", "Cierre": "15 min"}
 actividades = {}
-for momento in ["Inicio", "Desarrollo", "Cierre"]:
-    with st.expander(f"{momento} — {tiempos_def[momento]}", expanded=True):
+for momento, key in [("Inicio","inicio"), ("Desarrollo","desarrollo"), ("Cierre","cierre")]:
+    with st.expander(f"{momento}", expanded=True):
         ca, cb = st.columns([1, 4])
-        t    = ca.text_input("Tiempo", value=tiempos_def[momento], key=f"t_{momento}")
-        desc = cb.text_area("Actividades", placeholder=f"Actividades del {momento.lower()}...",
-                            key=f"a_{momento}", height=90)
+        t_default = plan.get(key, {}).get("tiempo", tiempos_def[momento])
+        d_default = plan.get(key, {}).get("descripcion", "")
+        t    = ca.text_input("Tiempo", value=t_default, key=f"t_{momento}")
+        desc = cb.text_area("Actividades", value=d_default,
+                            placeholder=f"Actividades del {momento.lower()}...",
+                            key=f"a_{momento}", height=100)
         actividades[momento] = {"tiempo": t, "descripcion": desc}
 
-st.divider()
 cr, ce = st.columns(2)
 with cr:
-    st.subheader("Recursos")
-    recursos = st.text_area("Lista", placeholder="Biblia, pizarron, fichas...", height=100)
+    st.markdown("**🛠️ Recursos**")
+    recursos = st.text_area("Lista", value=plan.get("recursos",""),
+                             placeholder="Biblia, pizarron, fichas...", height=100)
 with ce:
-    st.subheader("Tarea / Evaluacion")
-    evaluacion = st.text_area("Descripcion", placeholder="Tarea o evaluacion...", height=100)
+    st.markdown("**📝 Tarea / Evaluacion**")
+    evaluacion = st.text_area("Descripcion", value=plan.get("evaluacion",""),
+                               placeholder="Tarea o evaluacion...", height=100)
 
-observaciones = st.text_area("Observaciones (opcional)", height=70)
+observaciones = st.text_area("💬 Observaciones (opcional)", height=70)
 
 st.divider()
 
-if st.button("Generar y Descargar Plan (.docx)", type="primary", use_container_width=True):
+# ── Generar Word ──────────────────────────────────────────────────────────────
+st.subheader("4️⃣  Descargar")
+
+if st.button("📥 Generar y descargar Word (.docx)", type="primary", use_container_width=True):
     if not tema.strip():
-        st.error("Ingresa el tema antes de generar.")
+        st.error("Ingresa el tema primero.")
         st.stop()
 
     data = {
@@ -96,9 +185,6 @@ if st.button("Generar y Descargar Plan (.docx)", type="primary", use_container_w
     with open(data_path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False)
 
-    js = open("/tmp/generate_plan.js").read() if os.path.exists("/tmp/generate_plan.js") else None
-
-    # Write a clean JS file using the working template
     js_code = """const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
         AlignmentType, BorderStyle, WidthType, ShadingType, VerticalAlign } = require('docx');
 const fs = require('fs');
@@ -195,7 +281,7 @@ Packer.toBuffer(doc).then(buf=>{
     result = subprocess.run(["node", js_path], capture_output=True, text=True, env=env)
 
     if result.returncode != 0 or not os.path.exists(out_path):
-        st.error(f"Error al generar: {result.stderr}")
+        st.error(f"Error al generar el documento: {result.stderr}")
     else:
         with open(out_path, "rb") as f:
             docx_bytes = f.read()
