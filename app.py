@@ -89,28 +89,22 @@ Responde SOLO con un JSON valido con esta estructura exacta, sin texto adicional
 
     with st.spinner("Generando plan de clase..."):
         try:
+            api_key = st.secrets["GEMINI_API_KEY"]
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
             resp = requests.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": st.secrets["ANTHROPIC_API_KEY"],
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                json={
-                    "model": "claude-sonnet-4-6",
-                    "max_tokens": 1500,
-                    "messages": [{"role": "user", "content": prompt}],
-                },
+                url,
+                headers={"Content-Type": "application/json"},
+                json={"contents": [{"parts": [{"text": prompt}]}]},
                 timeout=30,
             )
             resp.raise_for_status()
-            raw = resp.json()["content"][0]["text"].strip()
+            raw = resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
             # Limpiar posibles bloques markdown
-            if raw.startswith("```"):
+            if "```" in raw:
                 raw = raw.split("```")[1]
                 if raw.startswith("json"):
                     raw = raw[4:]
-            plan = json.loads(raw)
+            plan = json.loads(raw.strip())
             st.session_state["plan_ia"] = plan
             st.success("Plan generado. Revisa y edita los campos abajo antes de descargar.")
         except Exception as e:
