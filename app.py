@@ -90,7 +90,7 @@ Responde SOLO con un JSON valido con esta estructura exacta, sin texto adicional
     with st.spinner("Generando plan de clase..."):
         try:
             api_key = st.secrets["GEMINI_API_KEY"]
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
             resp = requests.post(
                 url,
                 headers={"Content-Type": "application/json"},
